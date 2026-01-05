@@ -1,7 +1,18 @@
 #!/usr/bin/env bash
 
-# 1. OS Detection
-[[ "$OSTYPE" == "msys" || "$OSTYPE" == "win32" ]] && PYTHON_CMD="python" || PYTHON_CMD="python3"
+# 1. OS and Python Detection
+if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "win32" ]]; then
+    PYTHON_CMD="python"
+else
+    # Try to find python with flake8 installed
+    if python3.11 -m flake8 --version >/dev/null 2>&1; then
+        PYTHON_CMD="python3.11"
+    elif python3 -m flake8 --version >/dev/null 2>&1; then
+        PYTHON_CMD="python3"
+    else
+        PYTHON_CMD="python3"
+    fi
+fi
 
 echo "🛡️  Running pre-commit security and quality checks..."
 
@@ -89,22 +100,31 @@ validate_code_quality() {
             # Check if flake8 is actually installed
             if ! $PYTHON_CMD -m flake8 --version >/dev/null 2>&1; then
                 echo "⚠️  [MISSING TOOL] flake8 not found. Running basic syntax check instead..."
-                if ! $PYTHON_CMD -m py_compile "$file" 2>&1; then
+                # Create temp file with staged content for syntax check
+                local temp_file=$(mktemp)
+                git show ":$file" > "$temp_file"
+                if ! $PYTHON_CMD -m py_compile "$temp_file" 2>&1; then
                     ((quality_violations++))
                 fi
+                rm -f "$temp_file"
             else
-                # Run flake8 and capture output
-                local flake8_output=$($PYTHON_CMD -m flake8 "$file" 2>&1)
-                if [ $? -ne 0 ]; then
+                # Create temp file with staged content and run flake8 on it
+                local temp_file=$(mktemp --suffix=.py)
+                git show ":$file" > "$temp_file"
+                $PYTHON_CMD -m flake8 "$temp_file" > /tmp/flake8_output.txt 2>&1
+                local exit_code=$?
+                if [ $exit_code -ne 0 ]; then
                     ((quality_violations++))
                     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-                    echo "$flake8_output" | while IFS= read -r line; do
+                    # Replace temp filename with actual filename in output
+                    sed "s|$temp_file|$file|g" /tmp/flake8_output.txt | while IFS= read -r line; do
                         echo "   ⚠️  $line"
                     done
                     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
                 else
                     echo "   ✅ No issues found"
                 fi
+                rm -f "$temp_file" /tmp/flake8_output.txt
             fi
             echo ""
         fi
