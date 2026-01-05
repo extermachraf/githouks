@@ -10,7 +10,7 @@ else
     elif python3 -m flake8 --version >/dev/null 2>&1; then
         PYTHON_CMD="python3"
     else
-        PYTHON_CMD="python3"
+        PYTHON_CMD="python"
     fi
 fi
 

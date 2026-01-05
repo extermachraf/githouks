@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+
+# 1. Configuration
+COMMIT_MSG_FILE=$1
+CURRENT_BRANCH=$(git branch --show-current)
+
+# Define allowed patterns (Regex)
+# This requires branches to start with feature/, bugfix/, or hotfix/
+VALID_BRANCH_REGEX="^(feature|bugfix|hotfix)/.+"
+
+echo "🤖 Checking branch naming policy..."
+
+# 2. Validation: Prevent commits on main or poorly named branches
+if [[ "$CURRENT_BRANCH" == "main" ]]; then
+    echo "❌ [POLICY] You cannot commit directly to 'main'. Please use a feature branch."
+    exit 1
+fi
+
+if [[ ! "$CURRENT_BRANCH" =~ $VALID_BRANCH_REGEX ]]; then
+    echo "❌ [POLICY] Invalid branch name: '$CURRENT_BRANCH'"
+    echo "💡  Branches must follow the pattern: feature/*, bugfix/*, or hotfix/*"
+    exit 1
+fi
+
+# 3. Automation: Prefix the message
+ORIGINAL_MSG=$(cat "$COMMIT_MSG_FILE")
+
+# Avoid double-prefixing if you are amending a commit
+if [[ "$ORIGINAL_MSG" != "[$CURRENT_BRANCH]"* ]]; then
+    echo "[$CURRENT_BRANCH] $ORIGINAL_MSG" > "$COMMIT_MSG_FILE"
+    echo "✅ [AUTO] Prefixed message with branch: $CURRENT_BRANCH"
+fi
+
+exit 0
