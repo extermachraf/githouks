@@ -8,9 +8,9 @@ check_credentials() {
     local staged_files=$(git diff --cached --name-only)
     local found_bad_stuff=0
     local patterns=(
-        # Catch any variable with 'key', 'secret', or 'token' followed by a string
-        "[a-z0-9_]*(key|secret|token|password)\s*[=:]\s*['\"][^'\"]{10,}"
-        "-----BEGIN\s+(RSA\s+)?PRIVATE\s+KEY-----"
+        # Catch variable names containing key/secret/password/token
+        ".*(key|secret|token|password).*=.*['\"].{10,}"
+        "-----BEGIN.*PRIVATE KEY-----"
     )
 
     for file in $staged_files; do
