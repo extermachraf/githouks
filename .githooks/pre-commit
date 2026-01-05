@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+
+# 1. OS Detection
+[[ "$OSTYPE" == "msys" || "$OSTYPE" == "win32" ]] && PYTHON_CMD="python" || PYTHON_CMD="python3"
+
+# 2. High-Visibility Credential Detection
+check_credentials() {
+    local staged_files=$(git diff --cached --name-only)
+    local found_bad_stuff=0
+    local patterns=(
+        "password\s*[=:]\s*['\"][^'\"]{8,}"
+        "api[_-]?key\s*[=:]\s*['\"][^'\"]{20,}"
+        "secret\s*[=:]\s*['\"][^'\"]{16,}"
+        "-----BEGIN\s+(RSA\s+)?PRIVATE\s+KEY-----"
+    )
+
+    for file in $staged_files; do
+        [[ "$file" == *pre-commit* ]] && continue # Don't scan the hook itself
+        [ ! -f "$file" ] && continue
+
+        for pattern in "${patterns[@]}"; do
+            # We use 'grep -n' to show the LINE NUMBER
+            local matches=$(git show ":$file" | grep -niE -e "$pattern")
+            if [ ! -z "$matches" ]; then
+                echo -e "🚨 [SECURITY ALERT] Secret detected in: $file"
+                echo -e "Line(s) found:\n$matches\n"
+                found_bad_stuff=1
+            fi
+        done
+    done
+
+    [ $found_bad_stuff -ne 0 ] && return 1 || return 0
+}
+
+# 3. Informative Code Quality Validation
+validate_code_quality() {
+    local staged_files=$(git diff --cached --name-only --diff-filter=ACM)
+    local quality_violations=0
+
+    echo "🔍 Performing code quality validation..."
+
+    for file in $staged_files; do
+        if [[ "$file" == *.py ]]; then
+            echo "🐍 Checking: $file"
+            
+            # Check if flake8 is actually installed
+            if ! $PYTHON_CMD -m flake8 --version >/dev/null 2>&1; then
+                echo "⚠️  [MISSING TOOL] flake8 not found. Running basic syntax check instead..."
+                $PYTHON_CMD -m py_compile "$file" || ((quality_violations++))
+            else
+                # Run flake8 and SHOW the output
+                $PYTHON_CMD -m flake8 "$file" || ((quality_violations++))
+            fi
+        fi
+    done
+
+    if [ $quality_violations -gt 0 ]; then
+        echo -e "\n❌ Quality check failed with $quality_violations errors."
+        return 1
+    fi
+    return 0
+}
+
+# Main execution flow
+check_credentials || exit 1
+validate_code_quality || exit 1
+echo "🚀 [SUCCESS] All systems go!"
