@@ -10,25 +10,57 @@ check_credentials() {
     local staged_files=$(git diff --cached --name-only)
     local found_bad_stuff=0
     local patterns=(
-        # Catch variable names containing key/secret/password/token
-        ".*(key|secret|token|password).*=.*['\"].{10,}"
-        "-----BEGIN.*PRIVATE KEY-----"
+        # API Keys (various formats)
+        "(api[_-]?key|apikey)[[:space:]]*[=:][[:space:]]*['\"][a-zA-Z0-9_-]{20,}"
+        # AWS Keys
+        "(aws[_-]?access[_-]?key[_-]?id|aws[_-]?secret[_-]?access[_-]?key)[[:space:]]*[=:][[:space:]]*['\"][a-zA-Z0-9/+=]{20,}"
+        "AKIA[0-9A-Z]{16}"
+        # Generic secrets/tokens/passwords
+        "(secret|token|password|passwd|pwd)[[:space:]]*[=:][[:space:]]*['\"][^'\"]{8,}"
+        # Private keys
+        "-----BEGIN.*(PRIVATE|RSA|EC|DSA).*KEY-----"
+        # OAuth tokens
+        "(oauth[_-]?token|access[_-]?token|refresh[_-]?token)[[:space:]]*[=:][[:space:]]*['\"][a-zA-Z0-9_-]{20,}"
+        # Database connection strings
+        "(postgresql|mysql|mongodb)://[^:]+:[^@]+@"
+        # GitHub tokens
+        "gh[pousr]_[a-zA-Z0-9]{36,}"
+        # Stripe keys
+        "(sk|pk)_(live|test)_[a-zA-Z0-9]{24,}"
     )
+
+    echo "🔐 Scanning for secrets and credentials..."
 
     for file in $staged_files; do
         [[ "$file" == *pre-commit* ]] && continue # Don't scan the hook itself
         [ ! -f "$file" ] && continue
 
         for pattern in "${patterns[@]}"; do
-            # We use 'grep -n' to show the LINE NUMBER
-            local matches=$(git show ":$file" | grep -niE -e "$pattern")
+            local matches=$(git show ":$file" | grep -niE "$pattern")
             if [ ! -z "$matches" ]; then
-                echo -e "🚨 [SECURITY ALERT] Secret detected in: $file"
-                echo -e "Line(s) found:\n$matches\n"
+                if [ $found_bad_stuff -eq 0 ]; then
+                    echo ""
+                    echo "╔═══════════════════════════════════════════════════════╗"
+                    echo "║  🚨  SECURITY ALERT - SECRETS DETECTED  🚨           ║"
+                    echo "╚═══════════════════════════════════════════════════════╝"
+                    echo ""
+                fi
+                echo "📄 File: $file"
+                echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                echo "$matches" | while IFS= read -r line; do
+                    echo "   ⚠️  Line $line"
+                done
+                echo ""
                 found_bad_stuff=1
             fi
         done
     done
+
+    if [ $found_bad_stuff -ne 0 ]; then
+        echo "❌ Commit blocked: Potential secrets found in staged files."
+        echo "💡 Tip: Use environment variables or secret management tools."
+        echo ""
+    fi
 
     [ $found_bad_stuff -ne 0 ] && return 1 || return 0
 }
@@ -37,40 +69,96 @@ check_credentials() {
 validate_code_quality() {
     local staged_files=$(git diff --cached --name-only --diff-filter=ACM)
     local quality_violations=0
+    local checked_files=0
 
+    echo ""
     echo "🔍 Performing code quality validation..."
+    echo ""
 
     for file in $staged_files; do
         if [[ "$file" == *.py ]]; then
+            ((checked_files++))
             echo "🐍 Checking: $file"
             
             # Check if flake8 is actually installed
             if ! $PYTHON_CMD -m flake8 --version >/dev/null 2>&1; then
                 echo "⚠️  [MISSING TOOL] flake8 not found. Running basic syntax check instead..."
-                $PYTHON_CMD -m py_compile "$file" || ((quality_violations++))
+                if ! $PYTHON_CMD -m py_compile "$file" 2>&1; then
+                    ((quality_violations++))
+                fi
             else
-                # Run flake8 and SHOW the output
-                $PYTHON_CMD -m flake8 "$file" || ((quality_violations++))
+                # Run flake8 and capture output
+                local flake8_output=$($PYTHON_CMD -m flake8 "$file" 2>&1)
+                if [ $? -ne 0 ]; then
+                    ((quality_violations++))
+                    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                    echo "$flake8_output" | while IFS= read -r line; do
+                        echo "   ⚠️  $line"
+                    done
+                    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                else
+                    echo "   ✅ No issues found"
+                fi
             fi
+            echo ""
         fi
     done
 
     if [ $quality_violations -gt 0 ]; then
-        echo -e "\n❌ Quality check failed with $quality_violations errors."
+        echo ""
+        echo "╔═══════════════════════════════════════════════════════╗"
+        echo "║  ❌  CODE QUALITY ISSUES DETECTED  ❌                ║"
+        echo "╚═══════════════════════════════════════════════════════╝"
+        echo ""
+        echo "📊 Summary: $quality_violations file(s) with issues out of $checked_files checked"
+        echo "💡 Tip: Fix the issues above and try committing again."
+        echo ""
         return 1
+    else
+        if [ $checked_files -gt 0 ]; then
+            echo "✅ All $checked_files Python file(s) passed quality checks!"
+        fi
     fi
     return 0
 }
 
-# Main execution flow
+# Main execution flow - Run all checks and collect results
+echo ""
+echo "═══════════════════════════════════════════════════════════"
+echo "   🛡️  PRE-COMMIT VALIDATION STARTED"
+echo "═══════════════════════════════════════════════════════════"
+
+credentials_failed=0
+quality_failed=0
+
+# Run credential check
 check_credentials
 if [ $? -ne 0 ]; then
-    echo "Commit aborted due to detected credentials."
-    exit 1
+    credentials_failed=1
 fi
+
+# Always run quality check, even if credentials failed
 validate_code_quality
 if [ $? -ne 0 ]; then
-    echo "Commit aborted due to code quality issues."
-    exit 1
+    quality_failed=1
 fi
+
+# Display final summary
+echo "═══════════════════════════════════════════════════════════"
+if [ $credentials_failed -eq 1 ] || [ $quality_failed -eq 1 ]; then
+    echo "   ❌  COMMIT BLOCKED - Issues Found"
+    echo "═══════════════════════════════════════════════════════════"
+    echo ""
+    [ $credentials_failed -eq 1 ] && echo "   🚨 Security check: FAILED"
+    [ $quality_failed -eq 1 ] && echo "   🔍 Code quality: FAILED"
+    echo ""
+    echo "Please fix the issues above and try again."
+    echo ""
+    exit 1
+else
+    echo "   ✅  ALL CHECKS PASSED - Proceeding with commit"
+    echo "═══════════════════════════════════════════════════════════"
+    echo ""
+fi
+
 exit 0
