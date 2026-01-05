@@ -10,23 +10,29 @@ check_credentials() {
     local staged_files=$(git diff --cached --name-only)
     local found_bad_stuff=0
     local patterns=(
-        # API Keys (various formats)
-        "(api[_-]?key|apikey)[[:space:]]*[=:][[:space:]]*['\"][a-zA-Z0-9_-]{20,}"
-        # AWS Keys
-        "(aws[_-]?access[_-]?key[_-]?id|aws[_-]?secret[_-]?access[_-]?key)[[:space:]]*[=:][[:space:]]*['\"][a-zA-Z0-9/+=]{20,}"
+        # Generic variable names with key/secret/password/token + values
+        "[a-zA-Z_]*[kK][eE][yY][a-zA-Z_]*[[:space:]]*[=:][[:space:]]*['\"][a-zA-Z0-9_/+=.-]{16,}"
+        "[a-zA-Z_]*[sS][eE][cC][rR][eE][tT][a-zA-Z_]*[[:space:]]*[=:][[:space:]]*['\"][a-zA-Z0-9_/+=.-]{16,}"
+        "[a-zA-Z_]*[tT][oO][kK][eE][nN][a-zA-Z_]*[[:space:]]*[=:][[:space:]]*['\"][a-zA-Z0-9_/+=.-]{16,}"
+        "[a-zA-Z_]*[pP][aA][sS][sS][wW][oO][rR][dD][a-zA-Z_]*[[:space:]]*[=:][[:space:]]*['\"][^'\"]{8,}"
+        "[a-zA-Z_]*[pP][aA][sS][sS][wW][dD][a-zA-Z_]*[[:space:]]*[=:][[:space:]]*['\"][^'\"]{8,}"
+        # AWS Keys (specific format)
         "AKIA[0-9A-Z]{16}"
-        # Generic secrets/tokens/passwords
-        "(secret|token|password|passwd|pwd)[[:space:]]*[=:][[:space:]]*['\"][^'\"]{8,}"
+        "(aws[_-]?access|aws[_-]?secret)[a-zA-Z_]*[[:space:]]*[=:][[:space:]]*['\"][a-zA-Z0-9/+=]{20,}"
         # Private keys
-        "-----BEGIN.*(PRIVATE|RSA|EC|DSA).*KEY-----"
-        # OAuth tokens
-        "(oauth[_-]?token|access[_-]?token|refresh[_-]?token)[[:space:]]*[=:][[:space:]]*['\"][a-zA-Z0-9_-]{20,}"
-        # Database connection strings
-        "(postgresql|mysql|mongodb)://[^:]+:[^@]+@"
-        # GitHub tokens
+        "BEGIN.*(PRIVATE|RSA|EC|DSA).*KEY"
+        # OAuth and access tokens
+        "(oauth|access|refresh)[_-]?token[a-zA-Z_]*[[:space:]]*[=:][[:space:]]*['\"][a-zA-Z0-9_.-]{20,}"
+        # Database connection strings with credentials
+        "(postgresql|mysql|mongodb|redis)://[^:]+:[^@/]+@"
+        # GitHub Personal Access Tokens
         "gh[pousr]_[a-zA-Z0-9]{36,}"
-        # Stripe keys
+        # Stripe API keys
         "(sk|pk)_(live|test)_[a-zA-Z0-9]{24,}"
+        # Google API keys (typically start with AIza)
+        "AIza[0-9A-Za-z_-]{35}"
+        # Generic bearer tokens
+        "[bB]earer[[:space:]]+[a-zA-Z0-9_.-]{20,}"
     )
 
     echo "🔐 Scanning for secrets and credentials..."
