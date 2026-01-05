@@ -3,6 +3,8 @@
 # 1. OS Detection
 [[ "$OSTYPE" == "msys" || "$OSTYPE" == "win32" ]] && PYTHON_CMD="python" || PYTHON_CMD="python3"
 
+echo "🛡️  Running pre-commit security and quality checks..."
+
 # 2. High-Visibility Credential Detection
 check_credentials() {
     local staged_files=$(git diff --cached --name-only)
