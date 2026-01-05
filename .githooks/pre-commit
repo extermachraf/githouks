@@ -61,6 +61,14 @@ validate_code_quality() {
 }
 
 # Main execution flow
-check_credentials || exit 1
-validate_code_quality || exit 1
-echo "🚀 [SUCCESS] All systems go!"
+check_credentials
+if [ $? -ne 0 ]; then
+    echo "Commit aborted due to detected credentials."
+    exit 1
+fi
+validate_code_quality
+if [ $? -ne 0 ]; then
+    echo "Commit aborted due to code quality issues."
+    exit 1
+fi
+exit 0
