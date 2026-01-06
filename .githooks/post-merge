@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+
+# Check if requirements.txt was changed in the last merge
+if git diff-tree -r --name-only --no-commit-id ORIG_HEAD HEAD | grep -q "requirements.txt"; then
+    echo "📦 [DEPS] requirements.txt changed. Updating your virtual environment..."
+    pip install -r requirements.txt
+else
+    echo "✅ [DEPS] No dependency changes detected."
+fi
